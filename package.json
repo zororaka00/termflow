@@ -1,0 +1,49 @@
+{
+  "name": "termflow",
+  "version": "0.1.0",
+  "description": "A small dependency-free terminal task and progress renderer for Node.js CLI applications.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "keywords": [
+    "terminal",
+    "cli",
+    "progress",
+    "spinner",
+    "task",
+    "tty",
+    "typescript",
+    "esm"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zororaka00/termflow.git"
+  },
+  "homepage": "https://github.com/zororaka00/termflow/blob/main/README.md",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "typescript": "7.0.2"
+  }
+}
