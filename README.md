@@ -1,6 +1,6 @@
 # termflow
 
-A small, dependency-free TypeScript/ESM library for one terminal task at a time. It renders an ASCII spinner for interactive terminals, a fixed-width progress bar when a total is known, and safe newline-delimited records for logs, pipes, and CI.
+A small, dependency-free TypeScript/ESM library for task presentation. It renders single tasks or deterministic static task groups, with safe newline-delimited records for logs, pipes, CI, and accessibility-focused output.
 
 ## Requirements and installation
 
@@ -26,6 +26,19 @@ task.succeed('Release downloaded');
 
 `createTask()` returns a `pending` task and writes nothing. Calling `start()` changes it to `running`, performs an immediate render, and returns the same task. A repeated `start()` while running is a no-op.
 
+## Terminal output transcript
+
+This short clip shows the direct output of the included examples:
+
+- task-owned log passthrough;
+- progress and terminal status records;
+- static task-group output;
+- isolated task completion and group summary.
+
+<img src="./assets/termflow-demo.webp" alt="termflow terminal output transcript" width="960">
+
+[Open the terminal output image](./assets/termflow-demo.webp)
+
 ## API
 
 ```ts
@@ -40,12 +53,50 @@ export type TaskStatus =
 
 export type AnsiMode = 'auto' | 'always' | 'never';
 
+export type RenderMode =
+  | 'auto'
+  | 'interactive'
+  | 'static'
+  | 'accessible'
+  | 'silent';
+
+export type PlainOutputPolicy =
+  | 'all'
+  | 'start-and-final'
+  | 'final-only'
+  | 'silent'
+  | { type: 'periodic'; intervalMs: number };
+
+export interface TaskRenderView {
+  readonly status: TaskStatus;
+  readonly message: string;
+  readonly current: number;
+  readonly total: number | undefined;
+  readonly elapsedMs: number;
+  readonly spinnerFrame: string;
+}
+
+export interface TaskFinalRecord {
+  readonly status: Exclude<TaskStatus, 'pending' | 'running'>;
+  readonly message: string;
+  readonly current: number;
+  readonly total: number | undefined;
+  readonly elapsedMs: number;
+}
+
 export interface TaskOptions {
   message: string;
-  stream?: NodeJS.WritableStream & { isTTY?: boolean };
+  stream?: NodeJS.WritableStream & { isTTY?: boolean; columns?: number };
   total?: number;
   current?: number;
+  columns?: number;
   ansi?: AnsiMode;
+  renderMode?: RenderMode;
+  spinnerFrames?: readonly string[];
+  statusSymbols?: Partial<Record<TaskStatus, string>>;
+  progressBar?: { complete?: string; remaining?: string; width?: number };
+  format?: (view: Readonly<TaskRenderView>) => string;
+  plainOutput?: PlainOutputPolicy;
   clock?: TaskClock;
   scheduler?: TaskScheduler;
 }
@@ -59,6 +110,11 @@ export interface Task {
   start(): Task;
   update(message: string): Task;
   setProgress(current: number, total?: number): Task;
+  stop(): void;
+  clear(): void;
+  persist(): TaskFinalRecord;
+  dispose(): void;
+  log(record: string): void;
   succeed(message?: string): Task;
   fail(message?: string): Task;
   warn(message?: string): Task;
@@ -67,9 +123,44 @@ export interface Task {
 }
 
 export function createTask(options: TaskOptions): Task;
+
+export interface TaskGroupOptions {
+  stream?: NodeJS.WritableStream & { isTTY?: boolean; columns?: number };
+  columns?: number;
+  ansi?: AnsiMode;
+  renderMode?: RenderMode;
+  spinnerFrames?: readonly string[];
+  statusSymbols?: Partial<Record<TaskStatus, string>>;
+  progressBar?: { complete?: string; remaining?: string; width?: number };
+  format?: (view: Readonly<TaskRenderView>) => string;
+  plainOutput?: PlainOutputPolicy;
+  clock?: TaskClock;
+  scheduler?: TaskScheduler;
+}
+
+export interface TaskGroupTaskOptions {
+  message: string;
+  total?: number;
+  current?: number;
+  statusSymbols?: Partial<Record<TaskStatus, string>>;
+  progressBar?: { complete?: string; remaining?: string; width?: number };
+  format?: (view: Readonly<TaskRenderView>) => string;
+}
+
+export interface TaskGroup {
+  readonly tasks: readonly Task[];
+  createTask(options: TaskGroupTaskOptions): Task;
+  stop(): void;
+  clear(): void;
+  persist(): readonly TaskFinalRecord[];
+  dispose(): void;
+  log(record: string): void;
+}
+
+export function createTaskGroup(options?: TaskGroupOptions): TaskGroup;
 ```
 
-`TaskClock`, `TaskScheduler`, and `TaskTimer` are also exported for deterministic tests and specialized runtimes. Normal callers do not need them: the defaults use `Date.now()` and an unref'd Node.js interval.
+`TaskClock`, `TaskScheduler`, and `TaskTimer` are also exported for deterministic tests and specialized runtimes. Normal callers do not need them: the default clock uses Node's monotonic `performance.now()` and the interactive timer is an unref'd Node.js interval.
 
 ### Lifecycle and validation
 
@@ -80,6 +171,58 @@ export function createTask(options: TaskOptions): Task;
 - `update` and `setProgress` are allowed while pending, but do not render until the task starts.
 - `current` and `total` must be finite non-negative numbers. When a total is present, `current` must be no greater than total.
 - `setProgress(current, total?)` retains the previous total when `total` is omitted. Reaching `current === total` does **not** complete a task; call a terminal method explicitly.
+
+### Reliability and output controls
+
+For non-interactive output, `plainOutput` defaults to `'all'` for backward compatibility. Set it explicitly when CI, Docker, or redirected logs should be less verbose:
+
+```ts
+const task = createTask({
+  message: 'Upload archive',
+  plainOutput: 'start-and-final',
+});
+```
+
+- `'all'` writes every running update and the terminal record.
+- `'start-and-final'` writes one start record and one terminal record.
+- `{ type: 'periodic', intervalMs }` writes a start record, changed records no more often than `intervalMs`, and the terminal record. `intervalMs` must be a finite positive number.
+- `'final-only'` writes only a terminal record.
+- `'silent'` writes no task records.
+
+`stop()` stops task-owned automatic redraws without changing task state. `clear()` clears only an active termflow-owned interactive line. `persist()` returns the immutable terminal record and never writes it twice. `dispose()` releases task timers without closing or otherwise taking ownership of the configured stream; except for repeated `dispose()`, later task operations throw a lifecycle error.
+
+`task.log(record)` writes a stable, control-character-safe `[log]` record. When an interactive task is active, termflow clears its own transient line, writes the log, and restores the task without modifying unrelated caller output.
+
+Run `node examples/reliability.mjs` after `npm run build` for a static-output demo.
+
+### Task groups and customization
+
+`createTaskGroup()` is presentation-only: it creates independent task handles but never starts commands, manages processes, or schedules external work. Group tasks are rendered as deterministic static records to avoid rewriting caller-owned terminal regions; this remains stable for TTY, CI, pipes, and unknown terminal heights.
+
+```ts
+import { createTaskGroup } from 'termflow';
+
+const group = createTaskGroup({
+  renderMode: 'static',
+  statusSymbols: { success: 'DONE', failure: 'FAILED' },
+  progressBar: { complete: '=', remaining: '.', width: 12 },
+});
+
+const download = group.createTask({ message: 'Download release', total: 1 });
+const verify = group.createTask({ message: 'Verify checksum' });
+
+download.start().setProgress(1).succeed();
+verify.start().succeed();
+group.persist(); // writes one deterministic [group] summary and returns final records
+```
+
+Tasks preserve creation order in the immutable `group.tasks` snapshot; completion, failure, disposal, and records remain isolated. `group.persist()` is idempotent, requires every child to be terminal, and seals the group so no task can be added after its summary is produced. A terminal child may be disposed independently without losing its retained group record. `group.stop()`, `clear()`, and `dispose()` delegate only to task-owned renderer resources. `group.log()` emits a stable, sanitized record.
+
+Use `spinnerFrames` on standalone tasks. Set `statusSymbols`, `progressBar`, or `format` as group defaults or as per-group-task overrides; per-task symbol and progress-bar settings merge with group defaults. Every customization object is snapshotted on construction, and spinner frames, status symbols, and progress-bar characters reject terminal control characters. A formatter receives a frozen task snapshot; its string output is sanitized and width-limited before writing. Formatter exceptions propagate to the caller, as do caller-stream write errors.
+
+Groups deliberately use an append-only long-list strategy: every start, update, terminal transition, log, and final summary is a separate record in call order, so long task lists scroll normally instead of taking over a terminal region. Terminal height is intentionally not inspected. When `columns` is known directly or through `stream.columns`, task, log, and group-summary records are truncated to the available width.
+
+Run `node examples/group.mjs` after `npm run build` for the group demo.
 
 ## Rendering and ANSI modes
 
@@ -103,6 +246,16 @@ Interactive output starts immediately and uses the ASCII frames `-`, `\`, `|`, a
 
 Plain mode never animates, writes no ANSI controls, and never starts a spinner timer. `start`, running `update`, and running `setProgress` each emit a readable record. Final records are always newline-terminated. Progress uses a ten-column ASCII bar, for example `[####------] 4/10`.
 
+`renderMode` controls presentation independently from `ansi`:
+
+- `'auto'` is the default and selects interactive rendering only for supported streams.
+- `'interactive'` requests interactive rendering only when the target supports it.
+- `'static'` emits stable newline-delimited records, even with `ansi: 'always'`.
+- `'accessible'` is static text output whose status remains explicit without color or animation.
+- `'silent'` preserves programmatic state and records while emitting no task or task-log output.
+
+When `columns` is provided (or a valid `stream.columns` value is available), termflow truncates safely to the visible terminal width using an ellipsis. Unknown widths retain the stable existing layout. All messages and log records escape terminal control characters before they are rendered.
+
 Elapsed time is formatted as non-localized seconds with one decimal place, for example `(1.3s)`. It is measured from `start()` until the final render. A terminal task completed while pending has `(0.0s)`.
 
 ## Stream, timing, and safety semantics
@@ -115,7 +268,7 @@ For safe one-line records, terminal control characters in rendered messages are 
 
 ## Limitations and deferred features
 
-This MVP deliberately supports exactly one task instance and does **not** implement concurrent or nested task groups, ETA/remaining-time estimation, custom layouts or columns, themes, log buffering/interception, resize handling, JSON event output, full-screen or multi-region TUI behavior, logging frameworks, process management, command execution, AI/agents, networking, databases, scheduling, file watching, plugins, or structured-event pipelines.
+termflow supports presentation-only static task groups, but does **not** implement nested groups, ETA/remaining-time estimation, resize-driven layouts, themes, log buffering/interception, JSON event output, full-screen or multi-region TUI behavior, logging frameworks, process management, command execution, AI/agents, networking, databases, scheduling, file watching, plugins, or structured-event pipelines.
 
 It is a small display primitive, not a terminal emulator, TUI framework, logger, command runner, process manager, or replacement for application-level logging.
 
