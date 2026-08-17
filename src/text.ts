@@ -1,18 +1,27 @@
 const COMBINING_MARK = /\p{Mark}/u;
+const ANSI_RESET = '\u001B[0m';
 
 /** Return a conservative terminal-cell width without splitting Unicode code points. */
 export function visibleWidth(value: string): number {
   let width = 0;
-  for (const character of value) {
-    const codePoint = character.codePointAt(0) ?? 0;
+  for (let index = 0; index < value.length; ) {
+    const sgr = sgrAt(value, index);
+    if (sgr !== undefined) {
+      index += sgr.length;
+      continue;
+    }
+    const codePoint = value.codePointAt(index) ?? 0;
+    const character = String.fromCodePoint(codePoint);
     if (
       codePoint === 0x200d ||
       (codePoint >= 0xfe00 && codePoint <= 0xfe0f) ||
       COMBINING_MARK.test(character)
     ) {
+      index += character.length;
       continue;
     }
     width += isWide(codePoint) ? 2 : 1;
+    index += character.length;
   }
   return width;
 }
@@ -34,15 +43,73 @@ export function truncateVisible(value: string, maximumWidth: number | undefined)
 
   let result = '';
   let width = 0;
-  for (const character of value) {
+  const styles = new Set<string>();
+  for (let index = 0; index < value.length; ) {
+    const sgr = sgrAt(value, index);
+    if (sgr !== undefined) {
+      result += sgr;
+      applySgr(sgr, styles);
+      index += sgr.length;
+      continue;
+    }
+    const codePoint = value.codePointAt(index) ?? 0;
+    const character = String.fromCodePoint(codePoint);
     const characterWidth = visibleWidth(character);
     if (width + characterWidth > contentWidth) {
-      break;
+      return `${result}${styles.size === 0 ? '' : ANSI_RESET}${marker}`;
     }
     result += character;
     width += characterWidth;
+    index += character.length;
   }
   return `${result}${marker}`;
+}
+
+function sgrAt(value: string, index: number): string | undefined {
+  if (value[index] !== '\u001B' || value[index + 1] !== '[') {
+    return undefined;
+  }
+  const end = value.indexOf('m', index + 2);
+  if (end === -1) {
+    return undefined;
+  }
+  const parameters = value.slice(index + 2, end);
+  return /^[0-9;]*$/u.test(parameters) ? value.slice(index, end + 1) : undefined;
+}
+
+function applySgr(sequence: string, styles: Set<string>): void {
+  const parameters = sequence.slice(2, -1).split(';').map((parameter) =>
+    parameter === '' ? 0 : Number(parameter),
+  );
+  for (const parameter of parameters) {
+    if (parameter === 0) {
+      styles.clear();
+    } else if (parameter === 1 || parameter === 2) {
+      styles.add('intensity');
+    } else if (parameter === 3) {
+      styles.add('italic');
+    } else if (parameter === 4) {
+      styles.add('underline');
+    } else if (parameter === 9) {
+      styles.add('strikethrough');
+    } else if (parameter === 22) {
+      styles.delete('intensity');
+    } else if (parameter === 23) {
+      styles.delete('italic');
+    } else if (parameter === 24) {
+      styles.delete('underline');
+    } else if (parameter === 29) {
+      styles.delete('strikethrough');
+    } else if (
+      (parameter >= 30 && parameter <= 37) ||
+      (parameter >= 90 && parameter <= 97) ||
+      parameter === 38
+    ) {
+      styles.add('foreground');
+    } else if (parameter === 39) {
+      styles.delete('foreground');
+    }
+  }
 }
 
 function isWide(codePoint: number): boolean {

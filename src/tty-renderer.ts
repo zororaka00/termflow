@@ -1,4 +1,5 @@
 import { CLEAR_LINE } from './ansi.js';
+import { colorize } from './color.js';
 import { formatCustomLine, formatPlainLine, formatTaskDetails } from './plain-renderer.js';
 import type { Renderer, RenderView } from './renderer.js';
 import { truncateVisible } from './text.js';
@@ -14,12 +15,14 @@ export class TtyRenderer implements Renderer {
     const line =
       formatCustomLine(view) ??
       truncateVisible(
-        `${view.spinnerFrame} ${formatTaskDetails(
+        `${colorize(view.spinnerFrame, view.colorEnabled ? view.colors?.spinner : undefined)} ${formatTaskDetails(
           view.message,
           view.current,
           view.total,
           view.elapsedMs,
           view.progressBar,
+          view.colors,
+          view.colorEnabled,
         )}`,
         view.columns,
       );
@@ -40,6 +43,8 @@ export class TtyRenderer implements Renderer {
         view.columns,
         view.statusSymbol,
         view.progressBar,
+        view.colors,
+        view.colorEnabled,
       );
     this.#stream.write(
       `${clearActiveLine ? CLEAR_LINE : ''}${line}\n`,

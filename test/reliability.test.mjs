@@ -48,6 +48,29 @@ class FakeScheduler {
   }
 }
 
+function withEnvironment(values, callback) {
+  const keys = ['CI', 'NO_COLOR', 'TERM'];
+  const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+  try {
+    for (const key of keys) {
+      if (values[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = values[key];
+      }
+    }
+    callback();
+  } finally {
+    for (const key of keys) {
+      if (original[key] === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = original[key];
+      }
+    }
+  }
+}
+
 test('the default elapsed clock does not call the wall clock', () => {
   const originalDateNow = Date.now;
   Date.now = () => {
@@ -175,19 +198,21 @@ test('stop cancels automatic interactive redraws without changing task state', (
 });
 
 test('clear erases only the active interactive line without stopping the scheduler', () => {
-  const stream = new MemoryStream({ isTTY: true });
-  const scheduler = new FakeScheduler();
-  const task = createTask({ message: 'Check health', stream, scheduler });
+  withEnvironment({}, () => {
+    const stream = new MemoryStream({ isTTY: true });
+    const scheduler = new FakeScheduler();
+    const task = createTask({ message: 'Check health', stream, scheduler });
 
-  task.start();
-  task.clear();
-  const outputAfterFirstClear = stream.output;
-  task.clear();
+    task.start();
+    task.clear();
+    const outputAfterFirstClear = stream.output;
+    task.clear();
 
-  assert.equal(outputAfterFirstClear, '\r\u001B[2K- Check health (0.0s)\r\u001B[2K');
-  assert.equal(stream.output, outputAfterFirstClear);
-  assert.equal(scheduler.activeCount, 1);
-  assert.equal(task.status, 'running');
+    assert.equal(outputAfterFirstClear, '\r\u001B[2K- Check health (0.0s)\r\u001B[2K');
+    assert.equal(stream.output, outputAfterFirstClear);
+    assert.equal(scheduler.activeCount, 1);
+    assert.equal(task.status, 'running');
+  });
 });
 
 test('a pending task completed with forced ANSI does not clear caller-owned output', () => {
@@ -235,18 +260,20 @@ test('dispose releases renderer scheduling and rejects later task operations', (
 });
 
 test('log clears and restores only an active interactive task line', () => {
-  const stream = new MemoryStream({ isTTY: true });
-  const task = createTask({ message: 'Build package', stream });
+  withEnvironment({}, () => {
+    const stream = new MemoryStream({ isTTY: true });
+    const task = createTask({ message: 'Build package', stream });
 
-  task.start();
-  task.log('compiler started\nwatching source');
+    task.start();
+    task.log('compiler started\nwatching source');
 
-  assert.equal(
-    stream.output,
-    '\r\u001B[2K- Build package (0.0s)' +
-      '\r\u001B[2K[log] compiler started\\nwatching source\n' +
-      '\r\u001B[2K- Build package (0.0s)',
-  );
+    assert.equal(
+      stream.output,
+      '\r\u001B[2K- Build package (0.0s)' +
+        '\r\u001B[2K[log] compiler started\\nwatching source\n' +
+        '\r\u001B[2K- Build package (0.0s)',
+    );
+  });
 });
 
 test('known terminal columns bound the visible width of plain task records', () => {
@@ -279,16 +306,18 @@ test('static mode ignores forced ANSI and emits stable records on a TTY', () => 
 });
 
 test('custom spinner frames render deterministically for interactive tasks', () => {
-  const stream = new MemoryStream({ isTTY: true });
-  const scheduler = new FakeScheduler();
-  createTask({
-    message: 'Synchronize registry',
-    stream,
-    scheduler,
-    spinnerFrames: ['.'],
-  }).start();
+  withEnvironment({}, () => {
+    const stream = new MemoryStream({ isTTY: true });
+    const scheduler = new FakeScheduler();
+    createTask({
+      message: 'Synchronize registry',
+      stream,
+      scheduler,
+      spinnerFrames: ['.'],
+    }).start();
 
-  assert.equal(stream.output, '\r\u001B[2K. Synchronize registry (0.0s)');
+    assert.equal(stream.output, '\r\u001B[2K. Synchronize registry (0.0s)');
+  });
 });
 
 test('custom status symbols remain visible with ANSI disabled', () => {

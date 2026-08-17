@@ -1,12 +1,14 @@
 import { formatLogLine, writePlainLine } from './plain-renderer.js';
 import {
   assertTaskOptionValues,
-  createTask,
+  createTaskWithResolvedColors,
   snapshotPlainOutputPolicy,
   snapshotProgressBar,
   snapshotSpinnerFrames,
   snapshotStatusSymbols,
 } from './task.js';
+import { mergeColorThemes, snapshotColorTheme } from './color.js';
+import type { ColorThemeSnapshot } from './color.js';
 import { truncateVisible } from './text.js';
 import type {
   PlainOutputPolicy,
@@ -151,6 +153,7 @@ class TermflowTaskGroup implements TaskGroup {
   #ansi: 'auto' | 'always' | 'never' | undefined;
   #columns: number | undefined;
   #renderMode: RenderMode;
+  #colors: ColorThemeSnapshot | undefined;
   #spinnerFrames: readonly string[] | undefined;
   #statusSymbols: Partial<Record<TaskStatus, string>> | undefined;
   #progressBar: TaskProgressBarOptions | undefined;
@@ -169,6 +172,7 @@ class TermflowTaskGroup implements TaskGroup {
     this.#ansi = options.ansi;
     this.#columns = resolveColumns(options.columns, this.#stream);
     this.#renderMode = options.renderMode ?? 'static';
+    this.#colors = snapshotColorTheme(options.colors);
     this.#spinnerFrames =
       options.spinnerFrames === undefined ? undefined : snapshotSpinnerFrames(options.spinnerFrames);
     this.#statusSymbols =
@@ -195,7 +199,9 @@ class TermflowTaskGroup implements TaskGroup {
       options.statusSymbols === undefined ? undefined : snapshotStatusSymbols(options.statusSymbols);
     const progressBar =
       options.progressBar === undefined ? undefined : snapshotProgressBar(options.progressBar);
-    const task = new GroupTask(createTask({
+    const colors =
+      options.colors === undefined ? undefined : snapshotColorTheme(options.colors);
+    const task = new GroupTask(createTaskWithResolvedColors({
       ...options,
       stream: this.#stream,
       ansi: this.#ansi,
@@ -214,7 +220,7 @@ class TermflowTaskGroup implements TaskGroup {
       plainOutput: this.#plainOutput,
       clock: this.#clock,
       scheduler: this.#scheduler,
-    }));
+    }, mergeColorThemes(this.#colors, colors)));
     this.#tasks.push(task);
     return task;
   }

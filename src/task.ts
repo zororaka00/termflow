@@ -1,4 +1,9 @@
 import { CLEAR_LINE, shouldUseTtyRenderer } from './ansi.js';
+import {
+  shouldUseColors,
+  snapshotColorTheme,
+} from './color.js';
+import type { ColorThemeSnapshot } from './color.js';
 import { performance } from 'node:perf_hooks';
 import { formatLogLine, PlainRenderer, writePlainLine } from './plain-renderer.js';
 import type { Renderer, RenderView } from './renderer.js';
@@ -36,6 +41,7 @@ export function assertTaskOptionValues(
     TaskOptions,
     | 'ansi'
     | 'columns'
+    | 'colors'
     | 'clock'
     | 'format'
     | 'plainOutput'
@@ -91,8 +97,10 @@ class TermflowTask implements Task {
   #statusSymbols: Partial<Record<TaskStatus, string>> | undefined;
   #progressBar: TaskProgressBarOptions | undefined;
   #format: TaskFormat | undefined;
+  #colors: ColorThemeSnapshot | undefined;
+  #colorEnabled: boolean;
 
-  constructor(options: TaskOptions) {
+  constructor(options: TaskOptions, resolvedColors: ColorThemeSnapshot | undefined = undefined) {
     assertMessage(options.message);
     assertTaskOptionValues(options);
     this.#current = options.current === undefined ? 0 : options.current;
@@ -116,7 +124,8 @@ class TermflowTask implements Task {
     this.#clock = clock;
     this.#scheduler = scheduler;
     const renderMode = options.renderMode ?? 'auto';
-    this.#interactive = shouldUseInteractiveRenderer(renderMode, options.ansi ?? 'auto', stream);
+    const ansi = options.ansi ?? 'auto';
+    this.#interactive = shouldUseInteractiveRenderer(renderMode, ansi, stream);
     this.#silent = renderMode === 'silent';
     this.#columns = resolveColumns(options.columns, stream);
     this.#plainOutput = snapshotPlainOutputPolicy(options.plainOutput);
@@ -124,6 +133,8 @@ class TermflowTask implements Task {
     this.#statusSymbols = snapshotStatusSymbols(options.statusSymbols);
     this.#progressBar = snapshotProgressBar(options.progressBar);
     this.#format = options.format;
+    this.#colors = resolvedColors ?? snapshotColorTheme(options.colors);
+    this.#colorEnabled = shouldUseColors(this.#colors, ansi, renderMode, stream);
     this.#renderer = this.#interactive ? new TtyRenderer(stream) : new PlainRenderer(stream);
   }
 
@@ -336,6 +347,8 @@ class TermflowTask implements Task {
       progressBar: this.#progressBar,
       format: this.#format,
       columns: this.#columns,
+      colors: this.#colors,
+      colorEnabled: this.#colorEnabled,
     });
   }
 
@@ -611,4 +624,12 @@ function isTerminalStatus(status: TaskStatus): status is TerminalTaskStatus {
 
 export function createTask(options: TaskOptions): Task {
   return new TermflowTask(options);
+}
+
+/** Internal group adapter that reuses a group-owned, validated semantic color snapshot. */
+export function createTaskWithResolvedColors(
+  options: TaskOptions,
+  colors: ColorThemeSnapshot | undefined,
+): Task {
+  return new TermflowTask(options, colors);
 }

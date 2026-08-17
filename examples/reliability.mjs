@@ -6,6 +6,12 @@ const task = createTask({
   renderMode: 'static',
   plainOutput: 'start-and-final',
   columns: process.stdout.columns,
+  colors: {
+    running: 'cyan',
+    success: 'green',
+    progress: { ansi256: 214 },
+    elapsed: { rgb: { r: 145, g: 180, b: 255 } },
+  },
 });
 
 task.start();
