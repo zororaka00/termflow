@@ -1,5 +1,7 @@
 import { formatElapsed } from './elapsed.js';
 import { formatProgress } from './progress.js';
+import { colorize } from './color.js';
+import type { ColorThemeSnapshot } from './color.js';
 import type { Renderer, RenderView } from './renderer.js';
 import { truncateVisible } from './text.js';
 import type { TaskProgressBarOptions, TaskStatus } from './types.js';
@@ -10,9 +12,15 @@ export function formatTaskDetails(
   total: number | undefined,
   elapsedMs: number,
   progressBar?: TaskProgressBarOptions,
+  colors?: ColorThemeSnapshot,
+  colorEnabled = false,
 ): string {
-  const progress = total === undefined ? '' : ` ${formatProgress(current, total, progressBar)}`;
-  return `${escapeTerminalControls(message)}${progress} (${formatElapsed(elapsedMs)})`;
+  const progress =
+    total === undefined
+      ? ''
+      : ` ${colorize(formatProgress(current, total, progressBar), colorEnabled ? colors?.progress : undefined)}`;
+  const elapsed = colorize(`(${formatElapsed(elapsedMs)})`, colorEnabled ? colors?.elapsed : undefined);
+  return `${escapeTerminalControls(message)}${progress} ${elapsed}`;
 }
 
 export function escapeTerminalControls(value: string): string {
@@ -39,9 +47,13 @@ export function formatPlainLine(
   columns?: number,
   statusSymbol?: string,
   progressBar?: TaskProgressBarOptions,
+  colors?: ColorThemeSnapshot,
+  colorEnabled = false,
 ): string {
+  const statusLabel = `[${statusSymbol ?? status}]`;
+  const statusColor = status === 'pending' ? undefined : colors?.[status];
   return truncateVisible(
-    `[${statusSymbol ?? status}] ${formatTaskDetails(message, current, total, elapsedMs, progressBar)}`,
+    `${colorize(statusLabel, colorEnabled ? statusColor : undefined)} ${formatTaskDetails(message, current, total, elapsedMs, progressBar, colors, colorEnabled)}`,
     columns,
   );
 }
@@ -85,6 +97,8 @@ export class PlainRenderer implements Renderer {
           view.columns,
           view.statusSymbol,
           view.progressBar,
+          view.colors,
+          view.colorEnabled,
         ),
     );
   }

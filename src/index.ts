@@ -2,6 +2,10 @@ export { createTask } from './task.js';
 export { createTaskGroup } from './group.js';
 export type {
   AnsiMode,
+  ColorSlot,
+  ColorSpec,
+  ColorTheme,
+  NamedColor,
   PlainOutputPolicy,
   RenderMode,
   Task,

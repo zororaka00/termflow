@@ -1,6 +1,6 @@
 {
   "name": "termflow",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A small dependency-free terminal task, progress, and static group renderer for Node.js CLI applications.",
   "type": "module",
   "main": "./dist/index.js",

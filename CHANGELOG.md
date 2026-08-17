@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented in this file.
 
+## 0.3.0
+
+- Added dependency-free, opt-in semantic colors for task statuses, spinner, progress, and elapsed-time slots. Output remains strictly no-color unless callers pass `colors`.
+- Added validated named, structured SGR, ANSI 256-color, RGB, and six-digit hex color specifications with ANSI-safe reset handling and color-aware truncation.
+- Added documented `NO_COLOR`, ANSI-mode, TTY, CI, static-group inheritance, and accessibility behavior; `NO_COLOR` and `ansi: 'never'` always suppress configured colors.
+
 ## 0.2.0
 
 - Added the presentation-only `createTaskGroup()` API for deterministic, isolated multi-task static output and sealed final summaries that retain terminal child records through independent disposal.

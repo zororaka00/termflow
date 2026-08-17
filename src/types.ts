@@ -22,6 +22,41 @@ export type AnsiMode = 'auto' | 'always' | 'never';
 
 export type RenderMode = 'auto' | 'interactive' | 'static' | 'accessible' | 'silent';
 
+/** Semantic presentation slots that may be colorized when explicitly configured. */
+export type ColorSlot =
+  | 'running'
+  | 'success'
+  | 'failure'
+  | 'warning'
+  | 'cancelled'
+  | 'skipped'
+  | 'spinner'
+  | 'progress'
+  | 'elapsed';
+
+/** Dependency-free built-in foreground color names. */
+export type NamedColor =
+  | 'black'
+  | 'red'
+  | 'green'
+  | 'yellow'
+  | 'blue'
+  | 'magenta'
+  | 'cyan'
+  | 'white'
+  | 'gray';
+
+/** Structured color forms prevent raw terminal-control-sequence injection. */
+export type ColorSpec =
+  | NamedColor
+  | { ansiSgr: number | readonly number[] }
+  | { ansi256: number }
+  | { rgb: { r: number; g: number; b: number } }
+  | { hex: string };
+
+/** Opt-in colors for built-in task presentation slots. Unconfigured slots stay plain. */
+export type ColorTheme = Partial<Record<ColorSlot, ColorSpec>>;
+
 /** Controls stable records emitted when a task is not rendered interactively. */
 export type PlainOutputPolicy =
   | 'all'
@@ -73,6 +108,8 @@ export interface TaskOptions {
   ansi?: AnsiMode;
   /** Controls terminal interaction independently from ANSI preference. */
   renderMode?: RenderMode;
+  /** Explicit semantic colors. Omit to keep all task output free of color SGR sequences. */
+  colors?: ColorTheme;
   /** Non-empty spinner frames used for interactive rendering. */
   spinnerFrames?: readonly string[];
   /** Optional textual symbols that replace default status labels. */
@@ -95,6 +132,8 @@ export interface TaskGroupOptions {
   columns?: number;
   ansi?: AnsiMode;
   renderMode?: RenderMode;
+  /** Explicit semantic colors inherited by group tasks unless a task overrides a slot. */
+  colors?: ColorTheme;
   spinnerFrames?: readonly string[];
   statusSymbols?: Partial<Record<TaskStatus, string>>;
   progressBar?: TaskProgressBarOptions;
@@ -109,6 +148,8 @@ export interface TaskGroupTaskOptions {
   message: string;
   total?: number;
   current?: number;
+  /** Explicit semantic colors that override matching group color slots. */
+  colors?: ColorTheme;
   statusSymbols?: Partial<Record<TaskStatus, string>>;
   progressBar?: TaskProgressBarOptions;
   format?: TaskFormat;
